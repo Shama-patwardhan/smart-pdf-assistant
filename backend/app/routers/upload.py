@@ -13,7 +13,11 @@ from backend.app.models.schemas import UploadResponse, ErrorResponse
 from backend.app.services.pdf_service import validate_pdf, extract_text
 from backend.app.services.chunking_service import chunk_document
 from backend.app.services.embedding_service import generate_embeddings
-from backend.app.services.vector_store import add_document, delete_document, document_exists
+from backend.app.services.vector_store import add_document, delete_document, document_exists, save_document_questions
+from backend.app.services.groq_service import generate_suggested_questions
+from backend.app.services.storage_service import upload_pdf as upload_pdf_to_storage
+import tempfile
+import os
 
 # Set up module-level logger
 logger = logging.getLogger(__name__)
@@ -104,24 +108,26 @@ async def upload_pdf(file: UploadFile = File(...)) -> UploadResponse:
         logger.error(f"Failed to clear old index records for overwriting '{filename}': {e}")
         # Non-fatal error, log and continue
 
-    # 5. Save file to disk
-    file_path = settings.UPLOAD_FOLDER / filename
+    # 5. Upload file to Supabase Storage
+    content = await file.read()
     try:
-        with open(file_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
-        logger.info(f"Successfully saved uploaded file to disk at: '{file_path}'")
+        upload_pdf_to_storage(filename, content)
     except Exception as e:
-        logger.error(f"Failed saving file '{filename}' to disk: {e}")
+        logger.error(f"Failed saving file '{filename}' to Supabase: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed saving file upload to local storage.",
+            detail="Failed saving file upload to persistent storage.",
         )
 
     # 6. Execute RAG Ingestion Pipeline
+    # Create a temporary file to run the parsing pipeline (extract_text expects a path)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+        temp_file.write(content)
+        temp_file_path = temp_file.name
+
     try:
         # Extract page-by-page text
-        pages = extract_text(str(file_path))
+        pages = extract_text(temp_file_path)
         page_count = len(pages)
         if page_count == 0:
             raise ValueError("No readable text found in document pages.")
@@ -138,6 +144,13 @@ async def upload_pdf(file: UploadFile = File(...)) -> UploadResponse:
         # Index in Vector Database
         add_document(embedded_chunks)
 
+        # Generate suggested questions based on document text context
+        full_text = "\n".join([page.get("text", "") for page in pages])
+        suggested_qs = generate_suggested_questions(full_text)
+
+        # Persist suggested questions associated with the filename metadata
+        save_document_questions(filename, suggested_qs)
+
         logger.info(
             f"Pipeline complete for '{filename}': "
             f"Ingested {page_count} pages, generated {chunk_count} vector chunks."
@@ -148,23 +161,26 @@ async def upload_pdf(file: UploadFile = File(...)) -> UploadResponse:
             page_count=page_count,
             chunk_count=chunk_count,
             message="Document parsed, embedded, and indexed successfully.",
+            suggested_questions=suggested_qs
         )
 
     except ValueError as e:
-        # Cleanup file if processing failed after saving to avoid orphaned files
-        if file_path.exists():
-            file_path.unlink()
         logger.error(f"Process pipeline failed for '{filename}': {e}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Failed to process document: {str(e)}",
         )
     except Exception as e:
-        # Cleanup file
-        if file_path.exists():
-            file_path.unlink()
         logger.error(f"Unexpected pipeline exception for '{filename}': {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal processing failure: {str(e)}",
         )
+    finally:
+        # 7. Cleanup the temporary file regardless of success or failure
+        try:
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+                logger.info(f"Cleaned up temporary file: {temp_file_path}")
+        except Exception as cleanup_err:
+            logger.error(f"Failed to clean up temporary file {temp_file_path}: {cleanup_err}")

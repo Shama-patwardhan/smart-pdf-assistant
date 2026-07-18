@@ -49,6 +49,16 @@ class Settings(BaseSettings):
         ),
     )
 
+    # --- Supabase Configuration ---
+    SUPABASE_URL: str = Field(
+        default="",
+        description="The URL for the Supabase project."
+    )
+    SUPABASE_SERVICE_ROLE_KEY: str = Field(
+        default="",
+        description="The service role key for the Supabase project."
+    )
+
     # --- Storage Configuration ---
     UPLOAD_FOLDER: Path = Field(
         default=ROOT_DIR / "data" / "uploads",

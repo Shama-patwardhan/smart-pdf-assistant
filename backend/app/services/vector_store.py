@@ -2,6 +2,7 @@
 
 Handles persistent vector store operations including adding documents, checking
 existence, listing processed files, deleting documents, and searching using FAISS.
+It also persists generated suggested questions metadata.
 """
 
 import logging
@@ -20,19 +21,18 @@ logger = logging.getLogger(__name__)
 FAISS_DIR = settings.UPLOAD_FOLDER.parent / "faiss"
 INDEX_FILE = FAISS_DIR / "index.faiss"
 META_FILE = FAISS_DIR / "metadata.pkl"
+QUESTIONS_FILE = FAISS_DIR / "questions.pkl"
 EMBEDDING_DIM = 384  # Dimension for sentence-transformers/all-MiniLM-L6-v2
 
 # Global state
 index: faiss.IndexFlatL2 | None = None
 metadata_store: list[dict] = []
+questions_store: dict[str, list[str]] = {}
 
 
 def load_store() -> None:
-    """Loads the FAISS index and metadata from disk on startup.
-    
-    If the files do not exist, it initializes an empty FAISS index.
-    """
-    global index, metadata_store
+    """Loads the FAISS index, metadata, and questions from disk on startup."""
+    global index, metadata_store, questions_store
     
     FAISS_DIR.mkdir(parents=True, exist_ok=True)
     
@@ -52,6 +52,18 @@ def load_store() -> None:
         index = faiss.IndexFlatL2(EMBEDDING_DIM)
         metadata_store = []
 
+    # Load persisted questions
+    if QUESTIONS_FILE.exists():
+        try:
+            with open(QUESTIONS_FILE, "rb") as f:
+                questions_store = pickle.load(f)
+            logger.info(f"Loaded suggested questions for {len(questions_store)} documents.")
+        except Exception as e:
+            logger.error(f"Failed to load suggested questions: {e}")
+            questions_store = {}
+    else:
+        questions_store = {}
+
 
 def save_store() -> None:
     """Saves the FAISS index and metadata to disk."""
@@ -66,6 +78,31 @@ def save_store() -> None:
     except Exception as e:
         logger.error(f"Failed to save FAISS store: {e}")
         raise RuntimeError(f"Failed to save vector store: {str(e)}")
+
+
+def save_questions() -> None:
+    """Saves the suggested questions store to disk."""
+    global questions_store
+    try:
+        FAISS_DIR.mkdir(parents=True, exist_ok=True)
+        with open(QUESTIONS_FILE, "wb") as f:
+            pickle.dump(questions_store, f)
+        logger.info("Suggested questions metadata successfully saved to disk.")
+    except Exception as e:
+        logger.error(f"Failed to save suggested questions: {e}")
+        raise RuntimeError(f"Failed to save suggested questions metadata: {str(e)}")
+
+
+def save_document_questions(filename: str, questions: list[str]) -> None:
+    """Associates and persists suggested questions with a document."""
+    global questions_store
+    questions_store[filename] = questions
+    save_questions()
+
+
+def get_document_questions(filename: str) -> list[str]:
+    """Retrieves suggested questions for a document."""
+    return questions_store.get(filename, [])
 
 
 def add_document(chunks: list[dict]) -> None:
@@ -177,16 +214,9 @@ def list_documents() -> list[dict]:
 
 
 def delete_document(filename: str) -> None:
-    """Removes all indexed chunks associated with a document from FAISS and metadata.
-
-    Args:
-        filename: Name of the PDF file to delete.
-
-    Raises:
-        RuntimeError: If deletion fails.
-    """
+    """Removes all indexed chunks associated with a document from FAISS and metadata."""
     logger.info(f"Deleting document '{filename}' from FAISS vector store...")
-    global index, metadata_store
+    global index, metadata_store, questions_store
     
     try:
         if not document_exists(filename):
@@ -216,9 +246,15 @@ def delete_document(filename: str) -> None:
             index = new_index
             metadata_store = new_metadata
             
-        # Save after every delete operation
+        # Save FAISS index
         save_store()
-        logger.info(f"Successfully deleted all vector records for '{filename}'.")
+
+        # Delete document questions if present
+        if filename in questions_store:
+            del questions_store[filename]
+            save_questions()
+
+        logger.info(f"Successfully deleted all vector and questions records for '{filename}'.")
         
     except Exception as e:
         logger.error(f"Failed to delete document '{filename}' from FAISS: {e}")
@@ -226,16 +262,7 @@ def delete_document(filename: str) -> None:
 
 
 def search(query_embedding: list[float], top_k: int = 5) -> list[dict]:
-    """Searches the FAISS index for the most similar chunks to the query.
-
-    Args:
-        query_embedding: The vector embedding of the search query.
-        top_k: The maximum number of results to return.
-
-    Returns:
-        list[dict]: A list of matched source chunk dictionaries, sorted by relevance descending.
-            Each dictionary contains: filename, page_number, chunk_id, chunk_text, similarity_score.
-    """
+    """Searches the FAISS index for the most similar chunks to the query."""
     if index is None or index.ntotal == 0:
         logger.debug("Index is empty, returning no results.")
         return []
@@ -264,6 +291,20 @@ def search(query_embedding: list[float], top_k: int = 5) -> list[dict]:
         
     logger.debug(f"Search found {len(results)} matches.")
     return results
+
+def get_document_full_text(filename: str) -> str:
+    """Retrieves all text chunks for a document, concatenated into a single string.
+    
+    Args:
+        filename: Name of the PDF file.
+        
+    Returns:
+        str: The full text of the document.
+    """
+    chunks = [meta for meta in metadata_store if meta.get("filename") == filename]
+    # Sort chunks by page_number, then chunk_id to maintain order
+    chunks.sort(key=lambda x: (x.get("page_number", 0), x.get("chunk_id", 0)))
+    return "\n\n".join(chunk.get("chunk_text", "") for chunk in chunks)
 
 # Initialize on module load
 load_store()

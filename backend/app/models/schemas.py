@@ -8,6 +8,13 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
+class MessageHistoryItem(BaseModel):
+    """Schema representing an item in conversation history."""
+
+    role: str = Field(..., description="The role of the speaker, either 'user' or 'assistant'.", examples=["user"])
+    content: str = Field(..., description="The text content of the message.", examples=["Tell me about the document."])
+
+
 class UploadResponse(BaseModel):
     """Schema representing the successful PDF upload response."""
 
@@ -31,6 +38,11 @@ class UploadResponse(BaseModel):
         description="A user-friendly status message describing the upload result.",
         examples=["PDF uploaded, parsed, and embedded successfully."],
     )
+    suggested_questions: Optional[List[str]] = Field(
+        default=None,
+        description="Automatically generated suggested questions from the document context.",
+        examples=[["What is the summary of the document?", "What is the key takeaway?"]],
+    )
 
 
 class QuestionRequest(BaseModel):
@@ -38,12 +50,13 @@ class QuestionRequest(BaseModel):
 
     question: str = Field(
         ...,
-        min_length=3,
+        min_length=1,
         max_length=5000,
         strip_whitespace=True,
         description="The user's query or question about the PDF document(s).",
         examples=["What is the revenue for Q3 2023?"],
     )
+
     filename: Optional[str] = Field(
         default=None,
         description=(
@@ -51,6 +64,11 @@ class QuestionRequest(BaseModel):
             "If omitted, the search runs across all documents."
         ),
         examples=["financial_report.pdf"],
+    )
+
+    history: Optional[List[MessageHistoryItem]] = Field(
+        default=None,
+        description="The recent conversation history to provide conversational context.",
     )
 
 
@@ -85,13 +103,11 @@ class QuestionResponse(BaseModel):
     answer: str = Field(
         ...,
         description="The generated answer from the language model.",
-        examples=["The revenue for Q3 2023 was $4.2B, showing a 15% YoY growth."],
+        examples=[
+            "The revenue for Q3 2023 was $4.2B, showing a 15% year-over-year growth."
+        ],
     )
-    confidence: float = Field(
-        ...,
-        description="A confidence score or heuristic representing the reliability of the answer.",
-        examples=[0.95],
-    )
+
     sources: List[SourceChunk] = Field(
         ...,
         description="The list of document text chunks used to answer the question.",
@@ -130,4 +146,17 @@ class ErrorResponse(BaseModel):
         ...,
         description="A detailed description of the error cause or resolution.",
         examples=["The requested document sample.pdf does not exist."],
+    )
+
+
+class ChatMessage(BaseModel):
+    """Schema representing a complete chat message for persistence."""
+
+    id: str = Field(..., description="Unique identifier for the message.")
+    role: str = Field(..., description="The role of the speaker, either 'user' or 'assistant'.")
+    content: str = Field(..., description="The text content of the message.")
+    timestamp: str = Field(..., description="The timestamp of the message.")
+    sources: Optional[List[SourceChunk]] = Field(
+        default=None,
+        description="The list of document text chunks used to answer the question, if applicable.",
     )

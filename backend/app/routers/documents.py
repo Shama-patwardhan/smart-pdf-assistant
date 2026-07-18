@@ -9,7 +9,11 @@ from typing import List
 from fastapi import APIRouter, HTTPException, status
 from backend.app.config import settings
 from backend.app.models.schemas import DocumentInfo, ErrorResponse
-from backend.app.services.vector_store import list_documents, delete_document, document_exists
+from backend.app.services.vector_store import list_documents, delete_document, document_exists, get_document_questions, get_document_full_text
+from backend.app.services.asset_store import delete_assets, get_asset, save_asset
+from backend.app.services.groq_service import generate_study_sheet
+from backend.app.services.storage_service import delete_pdf
+from fastapi.responses import PlainTextResponse
 
 # Set up module-level logger
 logger = logging.getLogger(__name__)
@@ -78,12 +82,10 @@ async def delete_indexed_document(filename: str) -> dict:
     logger.info(f"Request received to delete document '{filename}'.")
 
     # 1. Validate existence in the system
-    file_path = settings.UPLOAD_FOLDER / filename
-    exists_on_disk = file_path.exists()
     exists_in_db = document_exists(filename)
 
-    if not exists_on_disk and not exists_in_db:
-        logger.warning(f"Delete request failed: '{filename}' not found in uploads or database.")
+    if not exists_in_db:
+        logger.warning(f"Delete request failed: '{filename}' not found in database.")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Document '{filename}' was not found in the assistant system.",
@@ -101,18 +103,106 @@ async def delete_indexed_document(filename: str) -> dict:
             detail=f"Failed to remove vector references: {str(e)}",
         )
 
-    # 3. Delete file from local uploads folder
+    # 3. Delete file from Supabase Storage
     try:
-        if exists_on_disk:
-            file_path.unlink()
-            logger.info(f"Deleted local file from storage: '{file_path}'")
+        delete_pdf(filename)
     except Exception as e:
-        logger.error(f"Failed to remove file '{filename}' from local storage: {e}")
+        logger.error(f"Failed to remove file '{filename}' from Supabase storage: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to remove local file from storage: {str(e)}",
+            detail=f"Failed to remove file from Supabase storage: {str(e)}",
         )
 
+    # 4. Delete document assets directory
+    try:
+        delete_assets(filename)
+    except Exception as e:
+        logger.error(f"Failed to remove assets directory for '{filename}': {e}")
+
     return {
-        "message": f"Document '{filename}' successfully deleted from vector database and local storage."
+        "message": f"Document '{filename}' successfully deleted from vector database and Supabase storage."
     }
+
+
+@router.get(
+    "/{filename}/questions",
+    response_model=List[str],
+    status_code=status.HTTP_200_OK,
+    responses={
+        404: {"model": ErrorResponse, "description": "Document not found in database"},
+        500: {"model": ErrorResponse, "description": "Database query failure"},
+    },
+)
+async def get_document_suggested_questions(filename: str) -> List[str]:
+    """Retrieves persisted suggested questions for a given document.
+
+    Args:
+        filename: Name of the PDF file.
+
+    Returns:
+        List[str]: List of suggested questions.
+    """
+    logger.info(f"Request received to get suggested questions for '{filename}'.")
+    if not document_exists(filename):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document '{filename}' was not found in the assistant system.",
+        )
+    try:
+        return get_document_questions(filename)
+    except Exception as e:
+        logger.error(f"Failed to fetch suggested questions: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to query questions: {str(e)}",
+        )
+
+@router.get(
+    "/{filename}/study_sheet",
+    response_class=PlainTextResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_study_sheet(filename: str):
+    logger.info(f"Retrieving study sheet for '{filename}'.")
+    if not document_exists(filename):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document '{filename}' not found.",
+        )
+    data = get_asset(filename, "study_sheet")
+    if not data or "content" not in data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Study sheet for '{filename}' not found.",
+        )
+    return PlainTextResponse(content=data["content"])
+
+@router.post(
+    "/{filename}/study_sheet",
+    response_class=PlainTextResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def create_study_sheet(filename: str, force_regenerate: bool = False):
+    logger.info(f"Request to generate study sheet for '{filename}'. Force: {force_regenerate}")
+    if not document_exists(filename):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document '{filename}' not found.",
+        )
+        
+    if not force_regenerate:
+        data = get_asset(filename, "study_sheet")
+        if data and "content" in data:
+            return PlainTextResponse(content=data["content"])
+            
+    try:
+        text = get_document_full_text(filename)
+        markdown_content = generate_study_sheet(text)
+        save_asset(filename, "study_sheet", {"content": markdown_content})
+        return PlainTextResponse(content=markdown_content)
+    except Exception as e:
+        logger.error(f"Failed to generate study sheet: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate study sheet: {str(e)}",
+        )

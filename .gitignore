@@ -154,3 +154,7 @@ data/faiss/*
 !data/faiss/.gitkeep
 backend/app/logs/*
 !backend/app/logs/.gitkeep
+data/chroma_db/
+frontend/dist/
+node_modules
+frontend/node_modules/

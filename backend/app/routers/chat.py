@@ -5,10 +5,12 @@ and generates grounded answers using the Groq LLM API.
 """
 
 import logging
+from typing import List
 from fastapi import APIRouter, HTTPException, status
-from backend.app.models.schemas import QuestionRequest, QuestionResponse, SourceChunk, ErrorResponse
+from backend.app.models.schemas import QuestionRequest, QuestionResponse, SourceChunk, ErrorResponse, ChatMessage
 from backend.app.services.retrieval_service import retrieve_relevant_chunks
 from backend.app.services.groq_service import generate_answer
+from backend.app.services.asset_store import get_asset, save_asset, clear_asset
 
 # Set up module-level logger
 logger = logging.getLogger(__name__)
@@ -35,7 +37,7 @@ async def ask_question(request: QuestionRequest) -> QuestionResponse:
         request: The QuestionRequest payload.
 
     Returns:
-        QuestionResponse: The answer, confidence score, and supporting sources.
+        QuestionResponse: The generated answer and supporting sources.
 
     Raises:
         HTTPException: If query validation, context retrieval, or Groq API calls fail.
@@ -50,8 +52,13 @@ async def ask_question(request: QuestionRequest) -> QuestionResponse:
         retrieved_chunks = retrieve_relevant_chunks(question, filename_scope)
         logger.debug(f"Retrieved {len(retrieved_chunks)} relevant source blocks for LLM context.")
 
-        # 2. Generate grounded answer via Groq LLM API
-        completion = generate_answer(question, retrieved_chunks)
+        # Convert Pydantic history objects to standard dictionary list
+        history_list = []
+        if request.history:
+            history_list = [item.model_dump() for item in request.history]
+
+        # 2. Generate grounded answer via Groq LLM API with chat memory context
+        completion = generate_answer(question, retrieved_chunks, history=history_list)
         
         # 3. Format supporting context list as SourceChunks
         source_objects = [
@@ -65,13 +72,12 @@ async def ask_question(request: QuestionRequest) -> QuestionResponse:
         ]
 
         logger.info(
-            f"Successfully resolved query response. Answer character count: {len(completion['answer'])}. "
-            f"Confidence: {completion['confidence']:.4f}"
+            f"Successfully resolved query response. "
+            f"Answer character count: {len(completion['answer'])}."
         )
 
         return QuestionResponse(
             answer=completion["answer"],
-            confidence=completion["confidence"],
             sources=source_objects
         )
 
@@ -86,4 +92,62 @@ async def ask_question(request: QuestionRequest) -> QuestionResponse:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred while answering the query: {str(e)}",
+        )
+
+
+@router.get(
+    "/{filename}/history",
+    response_model=List[ChatMessage],
+    status_code=status.HTTP_200_OK,
+)
+async def get_chat_history(filename: str) -> List[ChatMessage]:
+    """Retrieves chat history for a given document (or 'global')."""
+    logger.info(f"Retrieving chat history for '{filename}'.")
+    try:
+        data = get_asset(filename, "chat")
+        if data:
+            return [ChatMessage(**msg) for msg in data]
+        return []
+    except Exception as e:
+        logger.error(f"Failed to fetch chat history: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to query chat history: {str(e)}",
+        )
+
+
+@router.put(
+    "/{filename}/history",
+    status_code=status.HTTP_200_OK,
+)
+async def save_chat_history(filename: str, messages: List[ChatMessage]) -> dict:
+    """Saves chat history for a given document (or 'global')."""
+    logger.info(f"Saving chat history for '{filename}'.")
+    try:
+        data = [msg.model_dump() for msg in messages]
+        save_asset(filename, "chat", data)
+        return {"message": "Chat history saved successfully."}
+    except Exception as e:
+        logger.error(f"Failed to save chat history: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save chat history: {str(e)}",
+        )
+
+
+@router.delete(
+    "/{filename}/history",
+    status_code=status.HTTP_200_OK,
+)
+async def clear_chat_history(filename: str) -> dict:
+    """Clears chat history for a given document (or 'global')."""
+    logger.info(f"Clearing chat history for '{filename}'.")
+    try:
+        clear_asset(filename, "chat")
+        return {"message": "Chat history cleared successfully."}
+    except Exception as e:
+        logger.error(f"Failed to clear chat history: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to clear chat history: {str(e)}",
         )
