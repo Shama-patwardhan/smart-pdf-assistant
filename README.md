@@ -1,24 +1,66 @@
 # Smart PDF Assistant
 
-A modern Retrieval-Augmented Generation (RAG) application that allows users to upload PDF documents, chat with their contents, and generate structured study sheets using Large Language Models.
+A modern Retrieval-Augmented Generation (RAG) application that enables users to upload PDF documents, ask natural language questions, retrieve grounded answers with citations, and generate AI-powered study sheets.
 
-The application combines semantic search with LLM-powered reasoning to provide accurate, source-grounded answers instead of relying solely on the model's general knowledge.
+Unlike traditional chatbots, Smart PDF Assistant combines semantic search with Large Language Models (LLMs) to produce responses based only on the uploaded documents, making the answers explainable, verifiable, and context-aware.
 
 ---
 
-## Features
+# Features
 
-- Upload and process PDF documents
-- Semantic document search using vector embeddings
-- Ask natural language questions about uploaded PDFs
-- AI-generated answers with supporting citations
-- Page-level source references
+- Upload and index PDF documents
+- Semantic document retrieval using vector embeddings
+- Chat with uploaded documents using natural language
+- Grounded AI responses with page-level citations
+- Similarity scores for retrieved sources
 - Suggested follow-up questions
-- AI-powered study sheet generation
-- Markdown and mathematical equation rendering (KaTeX)
+- AI-generated study sheets
+- Markdown rendering with KaTeX support
+- Global and document-specific search
 - Document management (view and delete indexed documents)
-- Modern responsive React interface
+- Responsive React interface
 - Secure document storage using Supabase Storage
+- Light and dark themes
+
+---
+
+# Screenshots
+
+## Workspace
+
+Upload PDFs, browse indexed documents, ask questions globally or within a specific document, and receive AI-powered responses.
+
+
+
+---
+
+## AI Chat
+
+Grounded responses generated from uploaded documents with inline source references.
+
+
+
+---
+
+## Source Citations
+
+Every response includes supporting document chunks, page references, and similarity scores for transparency.
+
+
+
+---
+
+## Study Sheet Generation
+
+Generate structured study notes directly from uploaded PDFs.
+
+### Generation Progress
+
+
+
+### Generated Study Sheet
+
+
 
 ---
 
@@ -48,7 +90,7 @@ The application combines semantic search with LLM-powered reasoning to provide a
 
 # System Architecture
 
-```
+```text
                     +----------------------+
                     |    React Frontend    |
                     +----------+-----------+
@@ -63,7 +105,7 @@ The application combines semantic search with LLM-powered reasoning to provide a
         |                                             |
         ▼                                             ▼
 +----------------+                      +---------------------------+
-| PDF Extraction |                      |  Query Embedding          |
+| PDF Extraction |                      | Query Embedding           |
 |   (PyMuPDF)    |                      +-------------+-------------+
 +-------+--------+                                    |
         |                                             |
@@ -82,40 +124,48 @@ The application combines semantic search with LLM-powered reasoning to provide a
                              |
                              ▼
                     +----------------------+
-                    |     Groq LLM         |
+                    |      Groq LLM        |
                     +----------+-----------+
                                |
                                ▼
-                    AI Response + Sources
+                    AI Response + Citations
 ```
 
 ---
 
 # Workflow
 
-### Document Processing
+## Document Processing
 
 1. Upload a PDF document.
 2. Extract text using PyMuPDF.
 3. Split the document into semantic chunks.
-4. Generate embeddings for each chunk.
-5. Index the document for semantic retrieval.
-6. Store the original PDF securely in Supabase Storage.
+4. Generate vector embeddings.
+5. Index document chunks for semantic retrieval.
+6. Store the original PDF in Supabase Storage.
 
-### Question Answering
+## Question Answering
 
 1. User submits a question.
-2. The query is converted into an embedding.
-3. The system retrieves the most relevant document chunks.
-4. Retrieved context is sent to the Groq language model.
-5. The assistant generates a grounded answer with citations.
-6. Supporting document excerpts and page numbers are displayed.
+2. The question is embedded into vector space.
+3. Relevant document chunks are retrieved.
+4. Retrieved context is sent to the Groq LLM.
+5. The model generates a grounded response.
+6. Supporting citations and similarity scores are displayed.
+
+## Study Sheet Generation
+
+1. Analyze the uploaded document.
+2. Identify key concepts and structure.
+3. Generate organized notes in Markdown.
+4. Render mathematical expressions using KaTeX.
+5. Allow regeneration or copy-to-clipboard.
 
 ---
 
 # Project Structure
 
-```
+```text
 Smart PDF Assistant
 │
 ├── backend/
@@ -164,8 +214,6 @@ Create a virtual environment.
 ```bash
 python -m venv venv
 ```
-
-Activate it.
 
 ### Windows
 
@@ -224,7 +272,7 @@ Backend:
 http://127.0.0.1:8000
 ```
 
-Swagger Documentation:
+API Documentation:
 
 ```
 http://127.0.0.1:8000/docs
@@ -252,19 +300,19 @@ http://localhost:5173
 | Method | Endpoint | Description |
 |---------|----------|-------------|
 | POST | `/upload/` | Upload and index a PDF |
-| POST | `/chat/` | Ask questions about indexed documents |
-| POST | `/study-sheet/` | Generate study notes |
-| GET | `/documents/` | List uploaded documents |
-| DELETE | `/documents/{filename}` | Delete a document |
+| POST | `/chat/` | Ask questions about uploaded documents |
+| POST | `/study-sheet/` | Generate AI study notes |
+| GET | `/documents/` | List indexed documents |
+| DELETE | `/documents/{filename}` | Delete an indexed document |
 
 ---
 
 # Current Limitations
 
-- Supports text-based PDFs only
-- OCR for scanned documents is not implemented
-- Authentication is not available
-- Designed for single-user usage
+- Supports text-based PDFs only.
+- OCR for scanned documents is not implemented.
+- Authentication and multi-user support are not yet available.
+- Optimized for educational and research documents.
 
 ---
 
@@ -274,11 +322,11 @@ http://localhost:5173
 - Hybrid retrieval (vector + keyword search)
 - Conversation history across sessions
 - Multi-document summarization
-- Authentication and user accounts
+- User authentication
 - Docker support
 - Cloud deployment
-- Streaming responses
-- Citation highlighting inside the PDF
+- Streaming AI responses
+- Inline PDF citation highlighting
 
 ---
 
