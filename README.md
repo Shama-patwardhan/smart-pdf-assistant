@@ -1,101 +1,152 @@
 # Smart PDF Assistant
 
-## Overview
+A modern Retrieval-Augmented Generation (RAG) application that allows users to upload PDF documents, chat with their contents, and generate structured study sheets using Large Language Models.
 
-Smart PDF Assistant is a Retrieval-Augmented Generation (RAG) application that enables users to upload PDF documents and ask natural language questions about their contents. Instead of relying on the language model's general knowledge, the system retrieves the most relevant sections from the uploaded documents using semantic search and generates responses grounded in those retrieved passages.
-
-Each answer includes the supporting document chunks, page references, and a confidence score to help users verify the response.
-
-## Features
-
-- Upload and index PDF documents
-- Extract text from PDFs using PyMuPDF
-- Split documents into semantic text chunks
-- Generate embeddings using Sentence Transformers
-- Store and search embeddings using FAISS
-- Ask natural language questions about uploaded documents
-- Generate grounded responses using the Groq API
-- Display supporting source chunks and page numbers
-- View and manage indexed documents
-- Search within a specific document or across all uploaded documents
+The application combines semantic search with LLM-powered reasoning to provide accurate, source-grounded answers instead of relying solely on the model's general knowledge.
 
 ---
 
-## Technology Stack
+## Features
 
-### Backend
+- Upload and process PDF documents
+- Semantic document search using vector embeddings
+- Ask natural language questions about uploaded PDFs
+- AI-generated answers with supporting citations
+- Page-level source references
+- Suggested follow-up questions
+- AI-powered study sheet generation
+- Markdown and mathematical equation rendering (KaTeX)
+- Document management (view and delete indexed documents)
+- Modern responsive React interface
+- Secure document storage using Supabase Storage
+
+---
+
+# Technology Stack
+
+## Backend
+
 - FastAPI
-- FAISS
+- Python
 - Sentence Transformers
 - PyMuPDF
 - Groq API
 - Pydantic
 
-### Frontend
-- Streamlit
-- HTML/CSS
+## Frontend
+
+- React
+- TypeScript
+- Vite
+- Tailwind CSS
+
+## Storage
+
+- Supabase Storage
 
 ---
 
-## System Architecture
+# System Architecture
 
 ```
-User
-   │
-   ▼
-Streamlit Frontend
-   │
-   ▼
-FastAPI Backend
-   │
-   ├── PDF Processing
-   ├── Text Chunking
-   ├── Embedding Generation
-   ├── FAISS Vector Search
-   └── Groq LLM
-```
-
----
-
-## Workflow
-
-1. A user uploads a PDF document.
-2. The document text is extracted page by page.
-3. The extracted text is divided into overlapping chunks.
-4. Embeddings are generated for every chunk.
-5. The embeddings and metadata are stored in a FAISS vector index.
-6. When the user asks a question, an embedding is generated for the query.
-7. The system retrieves the most relevant chunks from the vector database.
-8. The retrieved context is provided to the Groq language model.
-9. The generated answer, supporting sources, and confidence score are returned to the user.
-
----
-
-## Project Structure
-
-```
-backend/
-    app/
-        routers/
-        services/
-        models/
-        utils/
-
-frontend/
-    assets/
-    app.py
-
-data/
-    faiss/
-    uploads/
-
-requirements.txt
-README.md
+                    +----------------------+
+                    |    React Frontend    |
+                    +----------+-----------+
+                               |
+                               |
+                    REST API (FastAPI)
+                               |
+        +----------------------+----------------------+
+        |                                             |
+        |                                             |
+ PDF Upload                                   Chat Requests
+        |                                             |
+        ▼                                             ▼
++----------------+                      +---------------------------+
+| PDF Extraction |                      |  Query Embedding          |
+|   (PyMuPDF)    |                      +-------------+-------------+
++-------+--------+                                    |
+        |                                             |
+        ▼                                             ▼
++----------------+                      +---------------------------+
+| Text Chunking  |                      | Semantic Retrieval        |
++-------+--------+                      +-------------+-------------+
+        |                                             |
+        ▼                                             ▼
++----------------+                      +---------------------------+
+| Embedding      |                      | Relevant Context          |
+| Generation     |                      +-------------+-------------+
++-------+--------+                                    |
+        |                                             |
+        +--------------------+------------------------+
+                             |
+                             ▼
+                    +----------------------+
+                    |     Groq LLM         |
+                    +----------+-----------+
+                               |
+                               ▼
+                    AI Response + Sources
 ```
 
 ---
 
-## Installation
+# Workflow
+
+### Document Processing
+
+1. Upload a PDF document.
+2. Extract text using PyMuPDF.
+3. Split the document into semantic chunks.
+4. Generate embeddings for each chunk.
+5. Index the document for semantic retrieval.
+6. Store the original PDF securely in Supabase Storage.
+
+### Question Answering
+
+1. User submits a question.
+2. The query is converted into an embedding.
+3. The system retrieves the most relevant document chunks.
+4. Retrieved context is sent to the Groq language model.
+5. The assistant generates a grounded answer with citations.
+6. Supporting document excerpts and page numbers are displayed.
+
+---
+
+# Project Structure
+
+```
+Smart PDF Assistant
+│
+├── backend/
+│   └── app/
+│       ├── models/
+│       ├── routers/
+│       ├── services/
+│       ├── utils/
+│       └── main.py
+│
+├── frontend/
+│   ├── public/
+│   ├── src/
+│   │   ├── components/
+│   │   ├── hooks/
+│   │   ├── pages/
+│   │   ├── routes/
+│   │   ├── services/
+│   │   └── types/
+│   ├── package.json
+│   └── vite.config.ts
+│
+├── data/
+├── .env.example
+├── requirements.txt
+└── README.md
+```
+
+---
+
+# Installation
 
 Clone the repository.
 
@@ -104,75 +155,133 @@ git clone https://github.com/Shama-patwardhan/smart-pdf-assistant.git
 cd smart-pdf-assistant
 ```
 
-Install the required dependencies.
+---
+
+## Backend Setup
+
+Create a virtual environment.
+
+```bash
+python -m venv venv
+```
+
+Activate it.
+
+### Windows
+
+```bash
+venv\Scripts\activate
+```
+
+### Linux / macOS
+
+```bash
+source venv/bin/activate
+```
+
+Install backend dependencies.
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Create a `.env` file in the project root.
+---
 
-```env
-GROQ_API_KEY=your_api_key
+## Frontend Setup
+
+```bash
+cd frontend
+npm install
 ```
 
 ---
 
-## Running the Application
+# Environment Variables
 
-Start the backend.
+Create a `.env` file in the project root.
+
+```env
+GROQ_API_KEY=your_groq_api_key
+
+SUPABASE_URL=your_supabase_url
+SUPABASE_KEY=your_supabase_key
+SUPABASE_BUCKET=your_bucket_name
+```
+
+---
+
+# Running the Application
+
+## Start the Backend
 
 ```bash
 uvicorn backend.app.main:app --reload
 ```
 
-The API will be available at:
+Backend:
 
 ```
 http://127.0.0.1:8000
 ```
 
-Swagger documentation:
+Swagger Documentation:
 
 ```
 http://127.0.0.1:8000/docs
 ```
 
-Start the frontend.
+---
+
+## Start the Frontend
 
 ```bash
-streamlit run frontend/app.py
+cd frontend
+npm run dev
+```
+
+Frontend:
+
+```
+http://localhost:5173
 ```
 
 ---
 
-## API Endpoints
+# API Endpoints
 
 | Method | Endpoint | Description |
 |---------|----------|-------------|
-| POST | `/upload/` | Upload and index a PDF document |
-| POST | `/chat/` | Ask a question about indexed documents |
-| GET | `/documents/` | List indexed documents |
-| DELETE | `/documents/{filename}` | Delete an indexed document |
+| POST | `/upload/` | Upload and index a PDF |
+| POST | `/chat/` | Ask questions about indexed documents |
+| POST | `/study-sheet/` | Generate study notes |
+| GET | `/documents/` | List uploaded documents |
+| DELETE | `/documents/{filename}` | Delete a document |
 
 ---
 
-## Limitations
+# Current Limitations
 
-- Only text-based PDFs are currently supported.
-- Scanned PDFs requiring OCR are not supported.
-- Responses are limited to the information contained in the uploaded documents.
-- Authentication and multi-user support are not implemented.
+- Supports text-based PDFs only
+- OCR for scanned documents is not implemented
+- Authentication is not available
+- Designed for single-user usage
 
 ---
 
-## Future Improvements
+# Future Improvements
 
 - OCR support for scanned PDFs
-- Hybrid retrieval combining keyword and vector search
-- Conversation memory
+- Hybrid retrieval (vector + keyword search)
+- Conversation history across sessions
 - Multi-document summarization
-- Docker deployment
+- Authentication and user accounts
+- Docker support
 - Cloud deployment
-- Frontend migration to React or Next.js
-- User authentication
+- Streaming responses
+- Citation highlighting inside the PDF
+
+---
+
+# License
+
+This project is intended for educational and portfolio purposes.
